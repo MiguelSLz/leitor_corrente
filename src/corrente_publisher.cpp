@@ -11,3 +11,18 @@ publicar em topico do ros2 esses dados das correntes eletricas;
 #include <termios.h>
 #include <unistd.h>
 
+const char* SERIAL_PORT = "/dev/ttyTHS1";
+
+void serial_config ();
+
+int main(void){
+
+    
+
+    return 0;
+}
+
+void serial_config (){
+    int chave_serial = open(SERIAL_PORT, O_RDWR | O_NOCTTY | O_NDELAY);
+    
+}
