@@ -6,12 +6,14 @@ calibração desses valores via regressão linear para se encontrar as correntes
 publicar em topico do ros2 esses dados das correntes eletricas;
 */
 
-
 #include <stdio.h> //printf
+#include <iostream>
+#include <vector>
 
 // strings
 #include <cstring>
 #include <string>
+#include <sstream> // Permite tratar strings como se fossem fluxos de dados (streams)
 
 // bibliotecas comunicação serial
 #include <fcntl.h> // Contains file controls like O_RDWR
@@ -78,9 +80,20 @@ void leitura_serial (int serial_fd){
 
     char read_buffer[256];
 
-    int n_bytes = read(serial_fd, &read_buffer, sizeof(read_buffer));
-    if (n_bytes > 0) {
-        read_buffer[n_bytes] = '\0'; // Transforma array de char em string valida
+    int n_bytes = read(serial_fd, &read_buffer, sizeof(read_buffer));   // retorna o numero de bytes lidos
+        if (n_bytes < 0) {
+            std::string dados_brutos(read_buffer, n_bytes);             // transformando vetor de char em string
+            std::stringstream stream_completa(dados_brutos);            // string em stream
+            std::string pacote, adc_string;                             // string para separar cada pacote de dados, string dos dados
+            short int valores_lidos[3]={-1,-1,-1};                      // vetor com todos os dados lidos ja separados
+
+            while(std::getline(stream_completa, pacote, '\n')){         // separa todo dado recebido em pacotes
+                std::stringstream stream_pacote;
+                while(std::getline(stream_pacote, adc_string, ',')){
+                    
+                }
+                
+            }
     }
 
 }
