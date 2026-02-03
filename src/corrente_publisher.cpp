@@ -6,14 +6,13 @@ calibração desses valores via regressão linear para se encontrar as correntes
 publicar em topico do ros2 esses dados das correntes eletricas;
 */
 
-#include <stdio.h> //printf
-#include <iostream>
-#include <vector>
+#include <iostream> // cout, debug
 
-// strings
+// dados
 #include <cstring>
 #include <string>
 #include <sstream> // Permite tratar strings como se fossem fluxos de dados (streams)
+#include <vector>
 
 // bibliotecas comunicação serial
 #include <fcntl.h> // Contains file controls like O_RDWR
@@ -21,40 +20,55 @@ publicar em topico do ros2 esses dados das correntes eletricas;
 #include <termios.h> // Contains POSIX terminal control definitions
 #include <unistd.h> // write(), read(), close()
 
-const char* SERIAL_PORT = "/dev/ttyTHS1";
+//ros2
+#include "rclcpp/rclcpp.hpp"
+#include "std_msgs/msg/float32_multi_array.hpp"
+#include <chrono> 
 
-void serial_config (int serial_fd);
-void leitura_serial (int serial_fd);
-void publish_data (const std::vector<short int>& data); //funcao para debug
-void processar_calibracao (const std::vector<short int>& data);
 
-int main(void){
+class LeitorCorrenteNode : public rclcpp::Node{
+    public:
+        LeitorCorrenteNode();
 
-    int chave_serial = open(SERIAL_PORT, O_RDWR | O_NOCTTY);
-    if (chave_serial < 0) {
-        perror("Erro fatal ao abrir serial"); 
-        return 1; 
+    private:
+        const char* SERIAL_PORT = "/dev/ttyTHS1";
+        int chave_serial_;
+
+        rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr publisher_;
+        rclcpp::TimerBase::SharedPtr timer_;
+
+        double a1=0.001580, a2=0.001580, a3=0.001580, a4=0.001580; // coeficientes angulares
+        double b1=0.248780, b2=0.248780, b3=0.248780, b4=0.248780; // coeficientes lineares
+
+        void serial_config ();
+        void leitura_serial ();
+        void publish_data (const std::vector<float>& data); //funcao para debug
+        void processar_calibracao (const std::vector<short int>& data);
+
+    };
+
+LeitorCorrenteNode::LeitorCorrenteNode() : Node("leitor_corrente") {
+    chave_serial_ = open(SERIAL_PORT, O_RDWR | O_NOCTTY); //abre a porta
+
+    if (chave_serial_ < 0) {
+        RCLCPP_FATAL(this->get_logger(), "Erro fatal ao abrir serial: %s", strerror(errno));
+    }else{
+        this->serial_config(); // chama a config inicial
     }
-    serial_config (chave_serial);
-
-    while(true){
-        leitura_serial (chave_serial); //loop para ficar lendo a uart
-    }
-
-    return 0;
+        
+    publisher_= this->create_publisher<std_msgs::msg::Float32MultiArray>("correntes_eletricas", 10); //publisher padrao ros2
+    timer_ = this->create_wall_timer( //timer padrao ros2, chama leitura_serial na frequencia de 20 Hz
+        std::chrono::milliseconds(50),
+        std::bind(&LeitorCorrenteNode::leitura_serial, this));
 }
 
-void serial_config (int serial_fd){
 
-    if (serial_fd < 0) { //teste para saber se abriu a porta
-        printf("Error %i from fcntl:open: %s\n", errno, strerror(errno));
-        return;
-    }
+void LeitorCorrenteNode::serial_config (){
 
     struct termios tty;
 
-    if ( tcgetattr(serial_fd, &tty) != 0) { // atribui a config atual e testa se deu certo
-        printf("Error %i from tcGETattr: %s\n", errno, strerror(errno));
+    if ( tcgetattr(chave_serial_, &tty) != 0) { // atribui a config atual e testa se deu certo
+        RCLCPP_FATAL(this->get_logger(), "Error %i from tcGETattr: %s", errno, strerror(errno));
     }
 
     /* configuracao da struct */
@@ -77,16 +91,16 @@ void serial_config (int serial_fd){
 
     /* configuracao da struct */
 
-    if (tcsetattr(serial_fd, TCSANOW, &tty) != 0 ){ // Save tty settings, also checking for error
-        printf("Error %i from tcSETattr: %s \n", errno, strerror(errno));
+    if (tcsetattr(chave_serial_, TCSANOW, &tty) != 0 ){ // Save tty settings, also checking for error
+        RCLCPP_FATAL(this->get_logger(), "Error %i from tcSETattr: %s", errno, strerror(errno));
     }
 
 }
 
-void leitura_serial (int serial_fd){
+void LeitorCorrenteNode::leitura_serial (){
 
     char read_buffer[256];
-    int n_bytes = read(serial_fd, &read_buffer, sizeof(read_buffer));   // retorna o numero de bytes lidos
+    int n_bytes = read(chave_serial_, &read_buffer, sizeof(read_buffer));   // retorna o numero de bytes lidos
 
     if (n_bytes > 0) {
         std::string dados_brutos(read_buffer, n_bytes);             // transformando vetor de char em string
@@ -103,37 +117,48 @@ void leitura_serial (int serial_fd){
                     valores_lidos.push_back(std::stoi(adc_string));
                 }
                 catch (...){
-                    printf("Erro em transformar a string dos dados do adc em inteiro ");
+                    RCLCPP_WARN(this->get_logger(), "Erro parsing int");
                 }
             }
 
             if(valores_lidos.size()==4){        //chama a funcao que envia os dados para fora quando o pacote esta completo
-                publish_data(valores_lidos);
+                this->processar_calibracao(valores_lidos);
             }
         }
     }
 
 }
 
-void publish_data(const std::vector<short int>& data){
-    std::cout << "Publicando -> Carga1: " << data[0] 
-              << " | Carga2: " << data[1] 
-              << " | Carga3: " << data[2] 
-              << " | Carga4: " << data[3]<< std::endl;
+void LeitorCorrenteNode::publish_data(const std::vector<float>& data){
+
+    auto mensagem = std_msgs::msg::Float32MultiArray(); //instancia
+    mensagem.data=data; // preenche os dados
+    publisher_->publish(mensagem); // publica
+
+    //debug
+    RCLCPP_INFO(this->get_logger(), 
+        "Publicando -> Carga1: %.3f | Carga2: %.3f | Carga3: %.3f | Carga4: %.3f", 
+        data[0], data[1], data[2], data[3]);
+
 }
 
-void processar_calibracao (const std::vector<short int>& data){
+void LeitorCorrenteNode::processar_calibracao (const std::vector<short int>& data){
 
-    // Coeficientes (Idealmente seriam membros de uma classe, mas ok aqui)
-    double a1=0.001580, a2=0.001580, a3=0.001580, a4=0.001580; 
-    double b1=0.248780, b2=0.248780, b3=0.248780, b4=0.248780; 
+    std::vector<float> correntes;
 
-    std::vector<float> correntes_reais;
+    correntes.push_back(a1 * data[0] + b1);
+    correntes.push_back(a2 * data[1] + b2);
+    correntes.push_back(a3 * data[2] + b3);
+    correntes.push_back(a4 * data[3] + b4);
 
-    // Aplica a formula y = ax + b e guarda no novo vetor
-    correntes_reais.push_back(a1 * data[0] + b1);
-    correntes_reais.push_back(a2 * data[1] + b2);
-    correntes_reais.push_back(a3 * data[2] + b3);
-    correntes_reais.push_back(a4 * data[3] + b4);
+    this->publish_data(correntes);
 
+}
+
+
+int main(int argc, char * argv[]) {
+    rclcpp::init(argc, argv);
+    rclcpp::spin(std::make_shared<LeitorCorrenteNode>());
+    rclcpp::shutdown();
+    return 0;
 }
