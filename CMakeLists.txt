@@ -10,6 +10,15 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 
+add_executable(leitor_corrente src/leitor_corrente.cpp)
+ament_target_dependencies(leitor_corrente rclcpp std_msgs)
+
+# Instala o executável onde o ROS2 consegue achar
+install(TARGETS
+  leitor_corrente
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   # the following line skips the linter which checks for copyrights
