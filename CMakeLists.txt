@@ -10,7 +10,7 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 
-add_executable(leitor_corrente src/leitor_corrente.cpp)
+add_executable(leitor_corrente src/corrente_publisher.cpp)
 ament_target_dependencies(leitor_corrente rclcpp std_msgs)
 
 # Instala o executável onde o ROS2 consegue achar
