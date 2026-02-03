@@ -2,7 +2,7 @@
 22/01/2026
 código responsavel por:
 fazer a leitura dos valores brutos do adc provenientes da esp, via comunicação serial;
-calibração desses valores via regressão linear para se encontrar as correntes;
+aplicar a formula utilizando os coeficientes encontrando na calibração para se encontrar as correntes;
 publicar em topico do ros2 esses dados das correntes eletricas;
 */
 
@@ -43,7 +43,7 @@ class LeitorCorrenteNode : public rclcpp::Node{
         void serial_config ();
         void leitura_serial ();
         void publish_data (const std::vector<float>& data); //funcao para debug
-        void processar_calibracao (const std::vector<short int>& data);
+        void processar_correntes (const std::vector<short int>& data);
 
     };
 
@@ -122,7 +122,7 @@ void LeitorCorrenteNode::leitura_serial (){
             }
 
             if(valores_lidos.size()==4){        //chama a funcao que envia os dados para fora quando o pacote esta completo
-                this->processar_calibracao(valores_lidos);
+                this->processar_correntes(valores_lidos);
             }
         }
     }
@@ -137,12 +137,12 @@ void LeitorCorrenteNode::publish_data(const std::vector<float>& data){
 
     //debug
     RCLCPP_INFO(this->get_logger(), 
-        "Publicando -> Carga1: %.3f | Carga2: %.3f | Carga3: %.3f | Carga4: %.3f", 
+        "Publicando -> Carga1: %.3f A | Carga2: %.3f A | Carga3: %.3f A | Carga4: %.3f A", 
         data[0], data[1], data[2], data[3]);
 
 }
 
-void LeitorCorrenteNode::processar_calibracao (const std::vector<short int>& data){
+void LeitorCorrenteNode::processar_correntes (const std::vector<short int>& data){
 
     std::vector<float> correntes;
 
