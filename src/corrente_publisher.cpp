@@ -23,6 +23,7 @@ publicar em topico do ros2 esses dados das correntes eletricas;
 //ros2
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/float32_multi_array.hpp"
+#include "voris_interfaces/msg/correntes_eletricas.hpp"
 #include <chrono> 
 
 
@@ -33,12 +34,13 @@ class LeitorCorrenteNode : public rclcpp::Node{
     private:
         const char* SERIAL_PORT = "/dev/ttyTHS1";
         int chave_serial_;
+        bool msg_inicial_; // para enviar a msg de no iniciado apenas uma vez 
 
-        rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr publisher_;
+        rclcpp::Publisher<voris_interfaces::msg::CorrentesEletricas>::SharedPtr publisher_;
         rclcpp::TimerBase::SharedPtr timer_;
 
-        double a1=0.001580, a2=0.001580, a3=0.001580, a4=0.001580; // coeficientes angulares
-        double b1=0.248780, b2=0.248780, b3=0.248780, b4=0.248780; // coeficientes lineares
+        double a1=0.00162747690, a2=0.00162747690, a3=0.00162747690, a4=0.00162747690; // coeficientes angulares
+        double b1=0.25051083201, b2=0.25051083201, b3=0.25051083201, b4=0.25051083201; // coeficientes lineares
 
         void serial_config ();
         void leitura_serial ();
@@ -48,6 +50,7 @@ class LeitorCorrenteNode : public rclcpp::Node{
     };
 
 LeitorCorrenteNode::LeitorCorrenteNode() : Node("leitor_corrente") {
+    msg_inicial_ = false;
     chave_serial_ = open(SERIAL_PORT, O_RDWR | O_NOCTTY); //abre a porta
 
     if (chave_serial_ < 0) {
@@ -56,7 +59,7 @@ LeitorCorrenteNode::LeitorCorrenteNode() : Node("leitor_corrente") {
         this->serial_config(); // chama a config inicial
     }
         
-    publisher_= this->create_publisher<std_msgs::msg::Float32MultiArray>("correntes_eletricas", 10); //publisher padrao ros2
+    publisher_= this->create_publisher<voris_interfaces::msg::CorrentesEletricas>("correntes_eletricas", 10); //publisher padrao ros2
     timer_ = this->create_wall_timer( //timer padrao ros2, chama leitura_serial na frequencia de 20 Hz
         std::chrono::milliseconds(50),
         std::bind(&LeitorCorrenteNode::leitura_serial, this));
@@ -121,7 +124,7 @@ void LeitorCorrenteNode::leitura_serial (){
                 }
             }
 
-            if(valores_lidos.size()==4){        //chama a funcao que envia os dados para fora quando o pacote esta completo
+            if(valores_lidos.size()==4){        // chama a funcao que envia os dados para fora quando o pacote esta completo
                 this->processar_correntes(valores_lidos);
             }
         }
@@ -131,14 +134,28 @@ void LeitorCorrenteNode::leitura_serial (){
 
 void LeitorCorrenteNode::publish_data(const std::vector<float>& data){
 
-    auto mensagem = std_msgs::msg::Float32MultiArray(); //instancia
-    mensagem.data=data; // preenche os dados
-    publisher_->publish(mensagem); // publica
+    auto mensagem = voris_interfaces::msg::CorrentesEletricas(); // cria a mensagem do tipo correntes_eletricas
+    //header
+    mensagem.header.stamp = this->get_clock()->now();
+    mensagem.header.frame_id = "placa_medicao_corrente";
+    //dados
+    mensagem.carga_1= data[0];
+    mensagem.carga_2= data[1];
+    mensagem.carga_3= data[2];
+    mensagem.carga_4= data[3];
 
-    //debug
+    publisher_->publish(mensagem);
+
+    if (msg_inicial_ == false){
+        msg_inicial_=true;
+        RCLCPP_INFO(this->get_logger(), "Node iniciado, publicando as correntes");
+    }   
+
+    /*                                      //debug
     RCLCPP_INFO(this->get_logger(), 
         "Publicando -> Carga1: %.3f A | Carga2: %.3f A | Carga3: %.3f A | Carga4: %.3f A", 
         data[0], data[1], data[2], data[3]);
+    */
 
 }
 
@@ -146,10 +163,29 @@ void LeitorCorrenteNode::processar_correntes (const std::vector<short int>& data
 
     std::vector<float> correntes;
 
-    correntes.push_back(a1 * data[0] + b1);
-    correntes.push_back(a2 * data[1] + b2);
-    correntes.push_back(a3 * data[2] + b3);
-    correntes.push_back(a4 * data[3] + b4);
+    if (data[0] == 0){
+        correntes.push_back(0.0f);
+    }else{
+        correntes.push_back(a1 * data[0] + b1);
+    }
+
+    if (data[1] == 0){
+        correntes.push_back(0.0f);
+    }else{
+        correntes.push_back(a2 * data[1] + b2);
+    }
+
+    if (data[2] == 0){
+        correntes.push_back(0.0f);
+    }else{
+        correntes.push_back(a3 * data[2] + b3);
+    }
+
+    if (data[3] == 0){
+        correntes.push_back(0.0f);
+    }else{
+        correntes.push_back(a4 * data[3] + b4);
+    }
 
     this->publish_data(correntes);
 
